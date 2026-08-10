@@ -1,0 +1,3 @@
+python-multipart
+openai
+python-dotenv
