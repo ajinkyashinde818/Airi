@@ -1,43 +1,34 @@
 import { cameraManager } from "../camera/cameraManager";
-import {
-  frameChangeDetector,
-} from "./frameChangeDetector";
+import { AIRI_LIMITS } from "../config";
+import { frameChangeDetector } from "./frameChangeDetector";
 import { sendFrameToVision } from "./visionService";
 
-class VisionLoop {
-  private timer: number | null = null;
-
+export class VisionLoop {
   private running = false;
-
+  private timer: number | null = null;
+  private interval: number = AIRI_LIMITS.visionIntervalMs;
+  private failureCount = 0;
   private processing = false;
 
-  private interval = 5000;
+  start(intervalMs?: number): void {
+    if (intervalMs && intervalMs > 0) {
+      this.interval = intervalMs;
+    }
 
-  private failureCount = 0;
-
-  start(): void {
     if (this.running) {
-      console.log(
-        "Airi Vision: loop already running."
-      );
-
+      console.log("Airi Vision: continuous vision loop is already running.");
       return;
     }
 
     this.running = true;
-
     this.failureCount = 0;
 
-    console.log(
-      "Airi Vision: continuous vision started."
-    );
+    console.log(`Airi Vision: continuous vision started with ${this.interval}ms interval.`);
 
     this.scheduleNextCapture(0);
   }
 
-  private scheduleNextCapture(
-    delay: number
-  ): void {
+  private scheduleNextCapture(delayMs: number): void {
     if (!this.running) {
       return;
     }
@@ -46,140 +37,80 @@ class VisionLoop {
       window.clearTimeout(this.timer);
     }
 
-    this.timer = window.setTimeout(
-      () => {
-        this.capture();
-      },
-      delay
-    );
+    this.timer = window.setTimeout(() => {
+      this.timer = null;
+      this.captureAndAnalyze();
+    }, delayMs);
   }
 
-  private async capture(): Promise<void> {
+  private async captureAndAnalyze(): Promise<void> {
     if (!this.running) {
       return;
     }
 
     if (this.processing) {
-      console.log(
-        "Airi Vision: previous request still processing."
-      );
-
-      this.scheduleNextCapture(
-        this.interval
-      );
-
+      console.log("Airi Vision: previous analysis in progress. Skipping.");
+      this.scheduleNextCapture(this.interval);
       return;
     }
 
-    if (!cameraManager.isRunning()) {
-      console.warn(
-        "Airi Vision: camera is not running."
-      );
-
-      this.scheduleNextCapture(
-        this.interval
-      );
-
-      return;
-    }
-
-    const frame =
-      cameraManager.captureFrame();
+    const frame = cameraManager.getFrameBase64();
 
     if (!frame) {
-      console.warn(
-        "Airi Vision: frame unavailable."
-      );
-
-      this.scheduleNextCapture(
-        this.interval
-      );
-
+      console.warn("Airi Vision: camera frame unavailable.");
+      this.scheduleNextCapture(this.interval);
       return;
     }
 
-    const changed =
-      await frameChangeDetector
-        .hasMeaningfulChange(frame);
-
+    const changed = await frameChangeDetector.hasChanged(frame);
     if (!changed) {
-      console.log(
-        "Airi Vision: no meaningful scene change. Skipping Gemini."
-      );
-
-      this.scheduleNextCapture(
-        this.interval
-      );
-
+      this.scheduleNextCapture(this.interval);
       return;
     }
 
     this.processing = true;
 
-    console.log(
-      "Airi Vision: analyzing changed frame..."
-    );
+    console.log("Airi Vision: analyzing changed frame...");
 
     try {
-      const success =
-        await sendFrameToVision(frame);
+      const success = await sendFrameToVision(frame);
 
       if (success) {
         this.failureCount = 0;
-
-        console.log(
-          "Airi Vision: frame processed."
-        );
+        console.log("Airi Vision: frame processed.");
       } else {
         this.failureCount++;
-
-        console.warn(
-          `Airi Vision: analysis failed. ` +
-          `Failure count: ${this.failureCount}`
-        );
+        console.warn(`Airi Vision: analysis failed. Failure count: ${this.failureCount}`);
       }
     } catch (error) {
       this.failureCount++;
-
-      console.error(
-        "Airi Vision: unexpected error:",
-        error
-      );
+      console.error("Airi Vision: unexpected error:", error);
     } finally {
       this.processing = false;
-
-      if (!this.running) {
-        return;
-      }
-
-      /*
-       * If errors happen repeatedly, slow down temporarily.
-       */
-      const delay =
-        this.failureCount >= 3
-          ? 15000
-          : this.interval;
-
-      this.scheduleNextCapture(delay);
     }
+
+    if (!this.running) {
+      return;
+    }
+
+    /*
+     * If errors happen repeatedly, slow down temporarily.
+     */
+    const delay = this.failureCount >= 3 ? AIRI_LIMITS.visionFailureSlowdownMs : this.interval;
+    this.scheduleNextCapture(delay);
   }
 
   stop(): void {
     this.running = false;
-
     this.processing = false;
 
     if (this.timer !== null) {
       window.clearTimeout(this.timer);
-
       this.timer = null;
     }
 
-    console.log(
-      "Airi Vision: continuous vision stopped."
-    );
+    console.log("Airi Vision: continuous vision stopped.");
   }
 }
 
-export const visionLoop =
-  new VisionLoop();
+export const visionLoop = new VisionLoop();

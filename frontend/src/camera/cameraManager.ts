@@ -29,33 +29,30 @@ class CameraManager {
     try {
       await this.camera.start();
 
-      console.log(
-        "Airi Vision: camera initialized successfully."
-      );
+      console.log("Airi Vision: camera initialized successfully.");
 
       return true;
     } catch (error) {
-      if (
-        error instanceof DOMException &&
-        error.name === "AbortError"
-      ) {
-        console.log(
-          "Airi Vision: camera initialization was interrupted."
-        );
-
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log("Airi Vision: camera initialization was interrupted.");
         return false;
       }
 
-      console.error(
-        "Airi Vision: camera initialization failed:",
-        error
-      );
+      console.error("Airi Vision: camera initialization failed:", error);
 
       return false;
     }
   }
 
   captureFrame(): string | null {
+    return this.camera.captureFrameAsBase64();
+  }
+
+  getFrameBase64(): string | null {
+    return this.camera.captureFrameAsBase64();
+  }
+
+  captureFrameAsBase64(): string | null {
     return this.camera.captureFrameAsBase64();
   }
 
@@ -68,5 +65,4 @@ class CameraManager {
   }
 }
 
-export const cameraManager =
-  new CameraManager();
+export const cameraManager = new CameraManager();

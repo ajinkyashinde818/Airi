@@ -8,10 +8,14 @@ from vision.visual_context import visual_context_store
 
 class VisionService:
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        engine: Any | None = None,
+        context_store: Any | None = None,
+    ) -> None:
 
-        self.engine = GeminiVisionEngine()
-        self.context_store = visual_context_store
+        self.engine = engine
+        self.context_store = context_store or visual_context_store
 
     async def analyze(
         self,
@@ -23,13 +27,17 @@ class VisionService:
                 "Empty image received."
             )
 
-        result = await self.engine.analyze(
+        result = await self._get_engine().analyze(
             image_data
         )
 
         if result.get("success") is True:
             result["visual_context"] = (
                 self.context_store.update(result)
+            )
+        else:
+            result["visual_context"] = (
+                self.context_store.get_context()
             )
 
         return result
@@ -39,6 +47,15 @@ class VisionService:
     ) -> dict[str, Any]:
 
         return self.context_store.get_context()
+
+    def _get_engine(
+        self
+    ) -> Any:
+
+        if self.engine is None:
+            self.engine = GeminiVisionEngine()
+
+        return self.engine
 
 
 vision_service = VisionService()

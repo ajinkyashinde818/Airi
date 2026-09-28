@@ -1,5 +1,4 @@
-const VISION_API =
-  "http://127.0.0.1:8000/vision/frame";
+import { AIRI_ENDPOINTS, AIRI_TIMEOUTS } from "../config";
 
 export interface VisualPerson {
   count: number | null;
@@ -33,30 +32,30 @@ interface VisionResponse {
 export async function sendFrameToVision(
   base64Image: string
 ): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(
+    () => controller.abort(),
+    AIRI_TIMEOUTS.visionMs
+  );
+
   try {
-    const imageResponse =
-      await fetch(base64Image);
+    const imageResponse = await fetch(base64Image);
 
-    const blob =
-      await imageResponse.blob();
+    const blob = await imageResponse.blob();
 
-    const formData =
-      new FormData();
+    const formData = new FormData();
 
-    formData.append(
-      "image",
-      blob,
-      "airi-frame.jpg"
-    );
+    formData.append("image", blob, "airi-frame.jpg");
 
-    const response =
-      await fetch(VISION_API, {
-        method: "POST",
-        body: formData,
-      });
+    const response = await fetch(AIRI_ENDPOINTS.visionFrame, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
 
-    const data: VisionResponse =
-      await response.json();
+    window.clearTimeout(timer);
+
+    const data: VisionResponse = await response.json();
 
     if (!response.ok) {
       console.warn(
@@ -68,18 +67,18 @@ export async function sendFrameToVision(
       return false;
     }
 
-    console.log(
-      "Airi Vision:",
-      data
-    );
+    console.log("Airi Vision:", data);
 
     return data.success === true;
-
   } catch (error) {
-    console.error(
-      "Airi Vision: network error:",
-      error
-    );
+    window.clearTimeout(timer);
+
+    if (error instanceof DOMException && error.name === "AbortError") {
+      console.warn("Airi Vision: analysis request timed out.");
+      return false;
+    }
+
+    console.error("Airi Vision: network error:", error);
 
     return false;
   }
